@@ -31,21 +31,41 @@ export class AIService {
         const endpoint = `${normalizedBase}/chat/completions`
         const headers = { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' }
         console.log('AIService -> POST', endpoint, { headers, payloadPreview: prompt.slice(0, 200) })
-        const response = await axios.post(
-          endpoint,
-          {
-            model: 'qwen3-max',
-            messages: [
-              { role: 'system', content: '你是一个专业的旅行规划助手，能够根据用户需求生成详细的旅行计划，包括交通、住宿、景点、餐厅和费用预算。请以 JSON 格式返回结果。' },
-              { role: 'user', content: prompt },
-            ],
-          },
-          {
-            headers,
-            timeout: 60000,
-          }
-        )
+        const timeoutMs = 120000
+        console.log(`AIService -> POST start ${new Date().toISOString()}`)
 
+        // Simple retry logic for transient timeouts
+        let response: any
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            console.log(`AIService -> POST attempt ${attempt} to ${endpoint}`)
+            response = await axios.post(
+              endpoint,
+              {
+                model: 'qwen3-max',
+                messages: [
+                  { role: 'system', content: '你是一个专业的旅行规划助手，能够根据用户需求生成详细的旅行计划，包括交通、住宿、景点、餐厅和费用预算。请以 JSON 格式返回结果。' },
+                  { role: 'user', content: prompt },
+                ],
+              },
+              {
+                headers,
+                timeout: timeoutMs,
+              }
+            )
+            break
+          } catch (err: any) {
+            console.error(`AIService -> POST attempt ${attempt} failed:`, err.message)
+            // If timeout, retry once. For other errors, rethrow to be handled below.
+            if (err.code === 'ECONNABORTED' && attempt < 2) {
+              console.log('AIService -> timeout, retrying...')
+              continue
+            }
+            throw err
+          }
+        }
+
+        console.log(`AIService -> POST done ${new Date().toISOString()}`)
         const content = response.data?.choices?.[0]?.message?.content || response.data?.choices?.[0]?.delta?.content || JSON.stringify(response.data)
         return this.parseAIResponse(content, request)
       }
@@ -55,34 +75,49 @@ export class AIService {
 
       const legacyHeaders = { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' }
       console.log('AIService -> POST (legacy)', endpoint, { headers: legacyHeaders, payloadPreview: prompt.slice(0, 200) })
-      const response = await axios.post(
-        endpoint,
-        {
-          model: 'qwen-max',
-          input: {
-            messages: [
-              {
-                role: 'system',
-                content: '你是一个专业的旅行规划助手，能够根据用户需求生成详细的旅行计划，包括交通、住宿、景点、餐厅和费用预算。请以 JSON 格式返回结果。',
+      const timeoutMs = 120000
+      let response: any
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          console.log(`AIService -> POST legacy attempt ${attempt} to ${endpoint}`)
+          response = await axios.post(
+            endpoint,
+            {
+              model: 'qwen-max',
+              input: {
+                messages: [
+                  {
+                    role: 'system',
+                    content: '你是一个专业的旅行规划助手，能够根据用户需求生成详细的旅行计划，包括交通、住宿、景点、餐厅和费用预算。请以 JSON 格式返回结果。',
+                  },
+                  {
+                    role: 'user',
+                    content: prompt,
+                  },
+                ],
               },
-              {
-                role: 'user',
-                content: prompt,
+              parameters: {
+                result_format: 'message',
               },
-            ],
-          },
-          parameters: {
-            result_format: 'message',
-          },
-        },
-        {
-          headers: legacyHeaders,
-          timeout: 60000,
+            },
+            {
+              headers: legacyHeaders,
+              timeout: timeoutMs,
+            }
+          )
+          break
+        } catch (err: any) {
+          console.error(`AIService -> POST legacy attempt ${attempt} failed:`, err.message)
+          if (err.code === 'ECONNABORTED' && attempt < 2) {
+            console.log('AIService -> legacy timeout, retrying...')
+            continue
+          }
+          throw err
         }
-      )
+      }
 
       const content = response.data.output.choices[0].message.content
-      
+
       // Parse the AI response and structure it
       return this.parseAIResponse(content, request)
     } catch (error: any) {
