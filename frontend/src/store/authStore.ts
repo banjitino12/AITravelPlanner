@@ -73,6 +73,9 @@ export const useAuthStore = create<AuthState>()(
 
         if (error) throw error
 
+        // Debug: log signup response so we can inspect whether username saved in metadata
+        console.debug('signUp result:', data)
+
         if (data.user) {
           const user: User = {
             id: data.user.id,

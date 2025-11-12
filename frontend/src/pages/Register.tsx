@@ -10,7 +10,7 @@ export default function Register() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
-  const register = useAuthStore((state) => state.register)
+  const login = useAuthStore((state) => state.login)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -29,7 +29,18 @@ export default function Register() {
     setLoading(true)
 
     try {
-      await register(email, password, username)
+      // Call server-side registration endpoint which uses service role to create user and profile
+      const resp = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, username }),
+      })
+
+      const result = await resp.json()
+      if (!resp.ok) throw new Error(result.error || '注册失败')
+
+      // After registration, perform normal login to obtain session
+      await login(email, password)
       navigate('/dashboard')
     } catch (err: any) {
       setError(err.message || '注册失败,请重试')

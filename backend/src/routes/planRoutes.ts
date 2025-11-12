@@ -26,7 +26,15 @@ router.post('/generate', authMiddleware, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: error.details[0].message })
     }
 
-    const { apiKey, ...planRequest } = value
+    const { apiKey: providedApiKey, ...planRequest } = value
+
+    // Prefer API key provided in request (from frontend), otherwise fall back to
+    // environment variable (recommended for server-side/GitHub Secrets).
+    const apiKey = providedApiKey || process.env.BAILIAN_API_KEY || process.env.ALIYUN_API_KEY || ''
+
+    if (!apiKey) {
+      return res.status(400).json({ error: 'AI apiKey is required. Provide apiKey in request or set BAILIAN_API_KEY/ALIYUN_API_KEY in environment.' })
+    }
 
     const aiService = new AIService(apiKey)
     const plan = await aiService.generateTravelPlan(planRequest)

@@ -22,8 +22,41 @@ export class AIService {
 
     try {
       // Using Alibaba Cloud Bailian Platform API
+      const baseUrl = process.env.BAILIAN_API_BASE_URL || process.env.ALIYUN_BASE_URL || 'https://dashscope.aliyuncs.com'
+      const normalizedBase = baseUrl.replace(/\/$/, '')
+
+      // If the base URL indicates the "compatible-mode" (dashscope OpenAI-compatible API),
+      // use the OpenAI-compatible chat completions endpoint and payload.
+      if (normalizedBase.includes('compatible-mode') || normalizedBase.includes('dashscope')) {
+        const endpoint = `${normalizedBase}/chat/completions`
+        const headers = { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' }
+        console.log('AIService -> POST', endpoint, { headers, payloadPreview: prompt.slice(0, 200) })
+        const response = await axios.post(
+          endpoint,
+          {
+            model: 'qwen3-max',
+            messages: [
+              { role: 'system', content: '你是一个专业的旅行规划助手，能够根据用户需求生成详细的旅行计划，包括交通、住宿、景点、餐厅和费用预算。请以 JSON 格式返回结果。' },
+              { role: 'user', content: prompt },
+            ],
+          },
+          {
+            headers,
+            timeout: 60000,
+          }
+        )
+
+        const content = response.data?.choices?.[0]?.message?.content || response.data?.choices?.[0]?.delta?.content || JSON.stringify(response.data)
+        return this.parseAIResponse(content, request)
+      }
+
+      // Fallback: legacy Bailian AIGC endpoint
+      const endpoint = `${normalizedBase}/api/v1/services/aigc/text-generation/generation`
+
+      const legacyHeaders = { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' }
+      console.log('AIService -> POST (legacy)', endpoint, { headers: legacyHeaders, payloadPreview: prompt.slice(0, 200) })
       const response = await axios.post(
-        'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+        endpoint,
         {
           model: 'qwen-max',
           input: {
@@ -43,10 +76,8 @@ export class AIService {
           },
         },
         {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: legacyHeaders,
+          timeout: 60000,
         }
       )
 
@@ -55,7 +86,12 @@ export class AIService {
       // Parse the AI response and structure it
       return this.parseAIResponse(content, request)
     } catch (error: any) {
-      console.error('AI Service Error:', error.response?.data || error.message)
+      // Log full response for easier debugging (status + data), fall back to message
+      console.error('AI Service Error:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message,
+      })
       throw new Error('Failed to generate travel plan')
     }
   }
